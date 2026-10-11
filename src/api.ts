@@ -1,0 +1,1 @@
+import{invoke}from"@tauri-apps/api/core";export type Status={phase:"loading"|"ready"|"recording"|"processing"|"error";recording:boolean;message:string};export async function getStatus():Promise<Status>{if(!("__TAURI_INTERNALS__"in window))return{phase:"error",recording:false,message:"Open the desktop app"};return invoke<Status>("get_status")}

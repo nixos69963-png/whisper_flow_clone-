@@ -1,0 +1,1 @@
+import assert from "node:assert/strict";import{RollingText}from"./rolling-text.js";const r=new RollingText();assert.equal([r.add("hello there friend"),r.add("friend this is local speech"),r.flush()].filter(Boolean).join(" "),"hello there friend this is local speech");console.log("PASS faster-whisper overlap pipeline");
