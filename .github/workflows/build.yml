@@ -45,34 +45,31 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      # tauri.conf.json maps .engine-stage/ as a resource. Create the directory
-      # so the Windows packaging step can run. The current whisper engine uses
-      # Linux-only native libraries and Linux commands, so this placeholder
-      # does NOT provide working Windows transcription.
-      - name: Prepare engine resource directory
+      # IMPORTANT: bundle.resources paths are relative to src-tauri/tauri.conf.json.
+      # The earlier workflow created .engine-stage at the repository root, which
+      # is why Tauri still reported: "resource path .engine-stage doesn't exist".
+      - name: Prepare configured Tauri resource directory
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path ".engine-stage" | Out-Null
-          @"
-          Windows engine placeholder.
-          The current faster-whisper-ts engine depends on Linux-only native libraries.
-          Replace this placeholder with a Windows-compatible engine before shipping
-          a functional Windows transcription application.
-          "@ | Set-Content -Encoding UTF8 ".engine-stage/README.txt"
+          $stagePath = Join-Path $env:GITHUB_WORKSPACE "src-tauri/.engine-stage"
+          New-Item -ItemType Directory -Force -Path $stagePath | Out-Null
+          Set-Content -Path (Join-Path $stagePath "README.txt") -Encoding utf8 -Value "Placeholder only: faster-whisper-ts 1.2.1 in this repository ships Linux .so libraries and the engine code explicitly rejects non-Linux platforms. This Windows package will not provide working transcription until the engine is ported or replaced."
+          if (-not (Test-Path (Join-Path $stagePath "README.txt"))) {
+            throw "Failed to prepare Tauri resource directory at $stagePath"
+          }
+          Write-Host "Prepared Tauri resource directory: $stagePath"
+          Get-ChildItem $stagePath -Force
 
-      - name: Verify native engine limitation
+      - name: Confirm unsupported native engine is not mistaken for Windows support
         shell: pwsh
         run: |
           $libPath = "node_modules/faster-whisper-ts/whisper_bridge/lib"
           if (Test-Path $libPath) {
-            $nativeFiles = Get-ChildItem $libPath -File
-            Write-Host "Native files found:"
-            $nativeFiles | ForEach-Object { Write-Host $_.Name }
-            if ($nativeFiles.Name -match '\.so(\.|$)') {
-              Write-Warning "Linux .so libraries were found; they cannot be used as Windows DLLs."
+            $names = (Get-ChildItem $libPath -File).Name
+            $names | ForEach-Object { Write-Host $_ }
+            if ($names -match '\.so(\.|$)') {
+              Write-Warning "Linux shared libraries (.so) are present; these are not Windows DLLs."
             }
-          } else {
-            Write-Warning "The faster-whisper-ts native library directory is missing."
           }
 
       - name: Build Windows installers
