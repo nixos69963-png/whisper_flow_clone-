@@ -1,0 +1,33 @@
+name: Build Linux desktop app
+on: { push: { branches: [main], tags: ['v*'] }, workflow_dispatch: {} }
+permissions: { contents: write }
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with: { workspaces: src-tauri -> target }
+      - name: Install native build and desktop dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ libwebkit2gtk-4.1-dev libappindicator3-dev libdbus-1-dev pkg-config librsvg2-dev patchelf xclip xdotool
+      - run: npm ci
+      - run: npm run engine:test
+      - name: Download offline base.en model
+        run: mkdir -p .model && for file in config.json model.bin tokenizer.json vocabulary.txt; do curl -fL --retry 3 "https://huggingface.co/Systran/faster-whisper-base.en/resolve/main/$file" -o ".model/$file"; done
+      - name: Prepare included TypeScript engine
+        env: { WHISPER_FLOW_MODEL_DIR: '${{ github.workspace }}/.model' }
+        run: node scripts/prepare-engine.mjs
+      - run: npx tauri icon app-icon.png
+      - uses: tauri-apps/tauri-action@v0
+        env: { GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }
+        with: { tagName: "${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}", releaseDraft: true }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: whisper-flow-linux-x64
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
