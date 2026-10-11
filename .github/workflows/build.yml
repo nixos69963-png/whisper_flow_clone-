@@ -34,38 +34,51 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Install Windows build tools
+      - name: Install MSVC build tools
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
-      - name: Install JavaScript dependencies without unsupported native install script
-        shell: pwsh
-        run: |
-          npm ci --ignore-scripts
+      - name: Install JavaScript dependencies
+        run: npm ci --ignore-scripts
 
       - name: Build frontend
         run: npm run build
 
-      # faster-whisper-ts@1.2.1's native CTranslate2 build does not provide
-      # the required Windows library. Do not run engine:build/test here and
-      # mistake a successful installer build for a working Windows engine.
-      - name: Verify Windows native engine dependency
+      # tauri.conf.json maps .engine-stage/ as a resource. Create the directory
+      # so the Windows packaging step can run. The current whisper engine uses
+      # Linux-only native libraries and Linux commands, so this placeholder
+      # does NOT provide working Windows transcription.
+      - name: Prepare engine resource directory
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ".engine-stage" | Out-Null
+          @"
+          Windows engine placeholder.
+          The current faster-whisper-ts engine depends on Linux-only native libraries.
+          Replace this placeholder with a Windows-compatible engine before shipping
+          a functional Windows transcription application.
+          "@ | Set-Content -Encoding UTF8 ".engine-stage/README.txt"
+
+      - name: Verify native engine limitation
         shell: pwsh
         run: |
           $libPath = "node_modules/faster-whisper-ts/whisper_bridge/lib"
           if (Test-Path $libPath) {
-            Write-Host "Native library directory exists: $libPath"
-            Get-ChildItem $libPath -Force
+            $nativeFiles = Get-ChildItem $libPath -File
+            Write-Host "Native files found:"
+            $nativeFiles | ForEach-Object { Write-Host $_.Name }
+            if ($nativeFiles.Name -match '\.so(\.|$)') {
+              Write-Warning "Linux .so libraries were found; they cannot be used as Windows DLLs."
+            }
           } else {
-            Write-Warning "The faster-whisper-ts Windows native library is absent."
-            Write-Warning "The installer can be packaged, but transcription will not work until the engine is ported/replaced for Windows."
+            Write-Warning "The faster-whisper-ts native library directory is missing."
           }
 
-      - name: Build Tauri Windows installer
-        run: npx tauri build --target x86_64-pc-windows-msvc
+      - name: Build Windows installers
+        run: npx tauri build --target x86_64-pc-windows-msvc --bundles nsis,msi
 
-      - name: Upload Windows installer
+      - name: Upload Windows installers
         uses: actions/upload-artifact@v4
         with:
           name: whisper-flow-windows-x64
