@@ -42,25 +42,41 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci --ignore-scripts
 
+      # The repository has app-icon.png at its root, but no src-tauri/icons/icon.ico.
+      # Generate Tauri's platform icon set before tauri-build looks for icon.ico.
+      - name: Generate Tauri app icons
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "app-icon.png")) {
+            throw "Root app-icon.png was not found. Add a square PNG icon at the repository root."
+          }
+          npx tauri icon "./app-icon.png" --output "./src-tauri/icons"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Tauri icon generation failed with exit code $LASTEXITCODE"
+          }
+          if (-not (Test-Path "src-tauri/icons/icon.ico")) {
+            throw "Tauri did not generate src-tauri/icons/icon.ico"
+          }
+          Get-ChildItem "src-tauri/icons" -Force
+
       - name: Build frontend
         run: npm run build
 
-      # IMPORTANT: bundle.resources paths are relative to src-tauri/tauri.conf.json.
-      # The earlier workflow created .engine-stage at the repository root, which
-      # is why Tauri still reported: "resource path .engine-stage doesn't exist".
+      # bundle.resources paths are resolved relative to src-tauri/tauri.conf.json.
       - name: Prepare configured Tauri resource directory
         shell: pwsh
         run: |
           $stagePath = Join-Path $env:GITHUB_WORKSPACE "src-tauri/.engine-stage"
           New-Item -ItemType Directory -Force -Path $stagePath | Out-Null
-          Set-Content -Path (Join-Path $stagePath "README.txt") -Encoding utf8 -Value "Placeholder only: faster-whisper-ts 1.2.1 in this repository ships Linux .so libraries and the engine code explicitly rejects non-Linux platforms. This Windows package will not provide working transcription until the engine is ported or replaced."
+          Set-Content `
+            -Path (Join-Path $stagePath "README.txt") `
+            -Encoding utf8 `
+            -Value "Placeholder only: the current faster-whisper-ts package contains Linux .so libraries and the engine rejects non-Linux platforms. This Windows package will not provide working transcription until the engine is ported or replaced."
           if (-not (Test-Path (Join-Path $stagePath "README.txt"))) {
             throw "Failed to prepare Tauri resource directory at $stagePath"
           }
-          Write-Host "Prepared Tauri resource directory: $stagePath"
-          Get-ChildItem $stagePath -Force
 
-      - name: Confirm unsupported native engine is not mistaken for Windows support
+      - name: Check current native engine platform
         shell: pwsh
         run: |
           $libPath = "node_modules/faster-whisper-ts/whisper_bridge/lib"
